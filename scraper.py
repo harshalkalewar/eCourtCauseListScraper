@@ -1,7 +1,7 @@
 import sys
 
 from selenium import webdriver
-from selenium.common import TimeoutException
+from selenium.common import TimeoutException, ElementNotInteractableException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.wait import WebDriverWait
@@ -56,6 +56,10 @@ def scrape_cause_list(state_name, dist, court_comp, court, date, case_type):
     wait = WebDriverWait(driver, 25)
     state_dropdown = wait.until(ec.presence_of_element_located((By.ID, "sess_state_code")))
 
+    # Closing the pop-up
+    close_btn = driver.find_element(By.CSS_SELECTOR, "button.btn-close[data-bs-dismiss='modal'][aria-label='Close']")
+    driver.execute_script("arguments[0].click();", close_btn)
+
     # Selecting state
     state = driver.find_element(By.ID, "sess_state_code")
     select_state = Select(state)
@@ -90,9 +94,6 @@ def scrape_cause_list(state_name, dist, court_comp, court, date, case_type):
 
     wait = WebDriverWait(driver, 15)
 
-    # Closing the pop-up
-    close_btn = driver.find_element(By.CSS_SELECTOR, "button.btn-close[data-bs-dismiss='modal'][aria-label='Close']")
-    driver.execute_script("arguments[0].click();", close_btn)
 
     # Captcha handling
     WebDriverWait(driver, 20)
@@ -106,6 +107,14 @@ def scrape_cause_list(state_name, dist, court_comp, court, date, case_type):
     civil_button = driver.find_element(By.CSS_SELECTOR, "button[onclick=\"submit_causelist('civ')\"]")
     criminal_button = driver.find_element(By.CSS_SELECTOR, "button[onclick=\"submit_causelist('cri')\"]")
     WebDriverWait(driver, 10)
+
+    # Closing the pop-up
+    try:
+        close_btn = driver.find_element(By.CSS_SELECTOR, "button.btn-close[data-bs-dismiss='modal'][aria-label='Close']")
+        if close_btn:
+            driver.execute_script("arguments[0].click();", close_btn)
+    except ElementNotInteractableException as e:
+        print(e)
 
 
     if case_type == "civil":
@@ -133,7 +142,7 @@ def scrape_cause_list(state_name, dist, court_comp, court, date, case_type):
         print("Captcha accepted, proceeding...")
 
     except Exception as e:
-        print(f"⚠️ Timeout or other issue: {e}")
+        print(f"Session Timeout - Please try again.")
         driver.quit()
         sys.exit(1)
 
