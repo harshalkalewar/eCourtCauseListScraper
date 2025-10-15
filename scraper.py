@@ -1,4 +1,7 @@
+import sys
+
 from selenium import webdriver
+from selenium.common import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.wait import WebDriverWait
@@ -16,26 +19,20 @@ from reportlab.lib.styles import getSampleStyleSheet
 
 
 def get_captcha(captcha_el, driver):
-    # Wait for the captcha element to be present
 
-    # Optionally scroll into view
     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", captcha_el)
     time.sleep(0.3)
 
-    # Save screenshot of the element (selenium 4+ supports element.screenshot)
     captcha_path = "captcha_element.png"
     captcha_el.screenshot(captcha_path)
     print("Saved captcha element screenshot to", captcha_path)
 
-    # Run OCR with pytesseract
     img = Image.open(captcha_path)
 
-    # Optional preprocessing (grayscale, thresholding) can help
     gray = img.convert("L")
     bw = gray.point(lambda x: 0 if x < 160 else 255, "1")
 
-    # Use pytesseract to read text
-    raw_text = pytesseract.image_to_string(bw, config="--psm 7")  # psm 7 = single line
+    raw_text = pytesseract.image_to_string(bw, config="--psm 7")
 
     try:
         os.remove(captcha_path)
@@ -50,12 +47,10 @@ def scrape_cause_list(state_name, dist, court_comp, court, date, case_type):
 
     # Initializing driver
     options = webdriver.ChromeOptions()
-    # options.add_argument("--headless=new")
+    options.add_argument("--headless=new")
     driver = webdriver.Chrome(options=options)
 
     driver.get("https://services.ecourts.gov.in/ecourtindia_v6/?p=cause_list/index&app_token=8c86faff375c072979d3b39239b94478fd94a2a54ecc415cd67aab81aae217be#")
-
-
 
     # Wait for the state dropdown to appear
     wait = WebDriverWait(driver, 25)
@@ -85,7 +80,6 @@ def scrape_cause_list(state_name, dist, court_comp, court, date, case_type):
     select_court_name = Select(court_name)
     select_court_name.select_by_visible_text(court)
 
-
     # Setting date
     WebDriverWait(driver, 10)
     wait.until(ec.presence_of_element_located((By.ID, "causelist_date")))
@@ -93,8 +87,6 @@ def scrape_cause_list(state_name, dist, court_comp, court, date, case_type):
     date_input = driver.find_element(By.ID, "causelist_date")
     date_input.clear()
     date_input.send_keys(desired_date)
-
-    #####################
 
     wait = WebDriverWait(driver, 15)
 
@@ -121,6 +113,31 @@ def scrape_cause_list(state_name, dist, court_comp, court, date, case_type):
     else:
         criminal_button.click()
 
+    # Error handling in case of Invalid captcha
+    try:
+        WebDriverWait(driver, 10).until(
+            lambda d: (
+                    d.find_elements(By.ID, "dispTable") or
+                    "Invalid" in d.find_element(By.ID, "validateError").text
+            )
+        )
+
+        error_elem = driver.find_element(By.ID, "validateError")
+        error_text = error_elem.text.strip()
+
+        if "Invalid" in error_text:
+            print("Invalid Captcha Detected — Please try again.")
+            driver.quit()
+            sys.exit(1)
+
+        print("Captcha accepted, proceeding...")
+
+    except Exception as e:
+        print(f"⚠️ Timeout or other issue: {e}")
+        driver.quit()
+        sys.exit(1)
+
+
     # CAUSE LIST SCRAPING
     table = WebDriverWait(driver, 20).until(
         ec.presence_of_element_located((By.ID, "dispTable"))
@@ -129,6 +146,8 @@ def scrape_cause_list(state_name, dist, court_comp, court, date, case_type):
     cases_data = []
     cases_data_json = []
     rows = table.find_elements(By.XPATH, ".//tbody/tr")
+
+    print("Scraping cause list")
 
     for row in rows:
         cols = row.find_elements(By.TAG_NAME, "td")
@@ -179,6 +198,7 @@ def scrape_cause_list(state_name, dist, court_comp, court, date, case_type):
     try:
         with open(json_filename, 'w', encoding='utf-8') as f:
             json.dump(cases_data_json, f, indent=4, ensure_ascii=False)
+            print("Cause list saved as JSON file successfully.")
     except Exception as e:
         print(f"Error saving to JSON file: {e}")
 
@@ -210,6 +230,7 @@ def scrape_cause_list(state_name, dist, court_comp, court, date, case_type):
 
     elements.append(table)
     doc.build(elements)
+    print("Cause list saved as PDF file successfully.")
 
     driver.quit()
 
@@ -219,6 +240,6 @@ if __name__ == "__main__":
                       "Thane",
                       "Thane, District and Sessions Court",
                       "14-Rajendra Mansing Rathod-Ad-hoc Dist. Judge 3 and Addl. Sessions Judge Thane",
-                      "14-10-2025",
+                      "15-10-2025",
                       "criminal"
                       )
